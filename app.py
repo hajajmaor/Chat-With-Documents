@@ -8,12 +8,11 @@ from langchain_community.document_loaders import WebBaseLoader
 from PyPDF2 import PdfReader
 from langchain.chains import RetrievalQA
 from langchain.text_splitter import CharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_huggingface import HuggingFaceEndpoint
 from dotenv import load_dotenv
-
+from langchain_huggingface import HuggingFaceEmbeddings
 load_dotenv()
 
 HUGGINGFACE_API_KEY = os.environ['HUGGINGFACE_API_KEY']
@@ -43,6 +42,28 @@ def process_input(input_type, input_data):
     elif input_type == "TXT":
         for file in input_data:
             documents += file.read().decode('utf-8')
+    elif input_type == "LocalData":
+        context_dir = '/workspaces/Chat-With-Documents/data'
+        for root, dirs, files in os.walk(context_dir):
+            # Skip .git directory
+            dirs[:] = [d for d in dirs if d != '.git']
+            for file in files:
+                try:
+                    path = os.path.join(root, file)
+                    if file.lower().endswith('.pdf'):
+                        with open(path, 'rb') as f:
+                            pdf_reader = PdfReader(f)
+                            for page in pdf_reader.pages:
+                                documents += page.extract_text()
+                    else:
+                        try:
+                            with open(path, 'r', encoding='utf-8') as f:
+                                documents += f.read() + "\n"
+                        except Exception:
+                            # If reading as text fails, skip the file.
+                            pass
+                except:
+                    pass
     else:
         raise ValueError("Unsupported input type")
 
@@ -98,7 +119,8 @@ def main():
         "Upload documents or provide a link to ask questions based on their content.")
 
     input_type = st.selectbox(
-        "Input Type", ["Link", "PDF", "Text", "DOCX", "TXT"])
+        "Input Type", ["Link", "PDF", "Text", "DOCX", "TXT", "LocalData"]  # Added LocalData option
+    )
     input_data = None
 
     if input_type == "Link":
@@ -112,22 +134,25 @@ def main():
         input_data = st.text_area("Enter the text")
     elif input_type in ["PDF", "DOCX", "TXT"]:
         input_data = st.file_uploader(
-            f"Upload {input_type} files", type=["*"], accept_multiple_files=True
+            f"Upload {input_type} files", type=["txt","dart","xml","py"], accept_multiple_files=True
         )
+    elif input_type == "LocalData":
+        st.info("Loading context from local data directory.")
+        input_data = None  # No additional user input required
 
     if st.button("Process Input"):
-        if input_type == "Link" and not input_data:
-            st.error("Please provide at least one valid link.")
-        elif input_type != "Link" and not input_data:
-            st.error("Please upload at least one file or enter valid text.")
-        else:
-            try:
-                vectorstore = process_input(input_type, input_data)
-                st.session_state["vectorstore"] = vectorstore
-                st.success("Input processed successfully!")
-            except Exception as e:
-                st.error(
-                    f"An error occurred while processing the input: {str(e)}")
+        # if input_type == "Link" and not input_data:
+        #     st.error("Please provide at least one valid link.")
+        # elif input_type != "Link" and not input_data:
+        #     st.error("Please upload at least one file or enter valid text.")
+        # else:
+        try:
+            vectorstore = process_input(input_type, input_data)
+            st.session_state["vectorstore"] = vectorstore
+            st.success("Input processed successfully!")
+        except Exception as e:
+            st.error(
+                f"An error occurred while processing the input: {str(e)}")
 
     if "vectorstore" in st.session_state:
         query = st.text_input("Ask your question:")
@@ -151,4 +176,6 @@ def main():
 
 
 if __name__ == "__main__":
+    #  run the command "streamlit run app.py" in the terminal to start the app
+    # os.system("streamlit run app.py")
     main()
